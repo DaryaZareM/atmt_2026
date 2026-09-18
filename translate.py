@@ -1,8 +1,10 @@
 import os
+import glob
 import logging
 import argparse
 import time
 import numpy as np
+import pickle
 import sacrebleu
 from tqdm import tqdm
 
@@ -32,9 +34,12 @@ def get_args():
     parser.add_argument('--seed', default=42, type=int, help='pseudo random number generator seed')
 
     # Add data arguments
-    parser.add_argument('--input', required=True, help='Path to the raw text file to translate (one sentence per line)')
-    parser.add_argument('--src-tokenizer', help='path to source sentencepiece tokenizer', required=True)
-    parser.add_argument('--tgt-tokenizer', help='path to target sentencepiece tokenizer', required=True)
+    parser.add_argument('--input', help='Path to the raw text file to translate (one sentence per line)')
+    parser.add_argument('--data', help='Path to a prepared data directory or a prepared source split')
+    parser.add_argument('--dicts', help='Directory containing SentencePiece tokenizer model files')
+    parser.add_argument('--prepared-split', default='test', help='Split name to translate when --data is a directory')
+    parser.add_argument('--src-tokenizer', help='path to source sentencepiece tokenizer')
+    parser.add_argument('--tgt-tokenizer', help='path to target sentencepiece tokenizer')
     parser.add_argument('--checkpoint-path', required=True, help='path to the model file')
     parser.add_argument('--batch-size', default=1, type=int, help='maximum number of sentences in a batch')
     parser.add_argument('--output', required=True, type=str, help='path to the output file destination')
@@ -49,15 +54,86 @@ def get_args():
     return parser.parse_args()
 
 
+def candidate_tokenizer_dirs(dicts_dir):
+    """Return likely directories containing tokenizer models."""
+    if dicts_dir is None:
+        return []
+    dicts_dir = os.path.normpath(dicts_dir)
+    parent = os.path.dirname(dicts_dir)
+    return [
+        dicts_dir,
+        os.path.join(dicts_dir, 'tokenizers'),
+        os.path.join(parent, 'tokenizers'),
+        parent,
+    ]
+
+
+def infer_tokenizer_path(args, checkpoint_args, side):
+    """Find a tokenizer model from --dicts using checkpoint metadata when possible."""
+    lang_attr = {'src': 'source_lang', 'tgt': 'target_lang'}[side]
+    tokenizer_attr = {'src': 'src_tokenizer', 'tgt': 'tgt_tokenizer'}[side]
+    lang = getattr(args, lang_attr, None) or getattr(checkpoint_args, lang_attr, None)
+    checkpoint_path = getattr(checkpoint_args, tokenizer_attr, None)
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        return checkpoint_path
+
+    if args.dicts is None:
+        raise ValueError(
+            f"Missing --{tokenizer_attr.replace('_', '-')}. Provide it directly or pass --dicts "
+            "pointing to the tokenizer directory."
+        )
+
+    wanted_basename = os.path.basename(checkpoint_path) if checkpoint_path else None
+    for directory in candidate_tokenizer_dirs(args.dicts):
+        if wanted_basename:
+            candidate = os.path.join(directory, wanted_basename)
+            if os.path.exists(candidate):
+                return candidate
+
+    if lang is None:
+        raise ValueError(f"Cannot infer {side} tokenizer because the checkpoint has no {side}_lang.")
+
+    matches = []
+    for directory in candidate_tokenizer_dirs(args.dicts):
+        matches.extend(glob.glob(os.path.join(directory, f'{lang}-bpe-*.model')))
+
+    matches = sorted(set(matches))
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError(
+            f"Found multiple {side} tokenizer candidates for language '{lang}': "
+            f"{matches}. Please pass --{tokenizer_attr.replace('_', '-')} explicitly."
+        )
+    raise FileNotFoundError(
+        f"Could not find a {side} tokenizer model for language '{lang}' under --dicts {args.dicts}."
+    )
+
+
+def read_prepared_source(args, src_lang):
+    """Load a pickled source split created by preprocess.py."""
+    data_path = args.data
+    if os.path.isdir(data_path):
+        data_path = os.path.join(data_path, f'{args.prepared_split}.{src_lang}')
+    with open(data_path, 'rb') as f:
+        return [torch.tensor(tokens, dtype=torch.long) for tokens in pickle.load(f)]
+
+
 def main(args):
     """ Main translation function' """
     # Load arguments from checkpoint
     torch.manual_seed(args.seed)
     state_dict = torch.load(args.checkpoint_path, map_location=lambda s, l: default_restore_location(s, 'cpu'), weights_only=False)
+    checkpoint_args = state_dict['args']
     args_loaded = argparse.Namespace(**{**vars(state_dict['args']), **vars(args)})
     args = args_loaded
     utils.init_logging(args)
 
+    if args.input is None and args.data is None:
+        raise ValueError("Provide either --input for raw text or --data for a prepared source split.")
+
+    args.src_tokenizer = args.src_tokenizer or infer_tokenizer_path(args, checkpoint_args, 'src')
+    args.tgt_tokenizer = args.tgt_tokenizer or infer_tokenizer_path(args, checkpoint_args, 'tgt')
 
     src_tokenizer = utils.load_tokenizer(args.src_tokenizer)
     tgt_tokenizer = utils.load_tokenizer(args.tgt_tokenizer)
@@ -81,12 +157,15 @@ def main(args):
     model.load_state_dict(state_dict['model'])
     logging.info('Loaded a model from checkpoint {:s}'.format(args.checkpoint_path))
 
-    # Read input sentences
-    with open(args.input, encoding="utf-8") as f:
-        src_lines = [line.strip() for line in f if line.strip()]
+    if args.data is not None:
+        src_encoded = read_prepared_source(args, args.source_lang)
+    else:
+        # Read input sentences
+        with open(args.input, encoding="utf-8") as f:
+            src_lines = [line.strip() for line in f if line.strip()]
 
-    # Encode input sentences
-    src_encoded = [torch.tensor(src_tokenizer.Encode(line, out_type=int, add_eos=True)) for line in src_lines]
+        # Encode input sentences
+        src_encoded = [torch.tensor(src_tokenizer.Encode(line, out_type=int, add_eos=True)) for line in src_lines]
     # trim to max_len
     max_seq_len = min(model.encoder.pos_embed.size(1), args.max_len)
     # src_encoded = [s[:max_seq_len] for s in src_encoded]
@@ -103,6 +182,9 @@ def main(args):
 
     # Clear output file
     if args.output is not None:
+        output_dir = os.path.dirname(args.output)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         with open(args.output, 'w', encoding="utf-8") as out_file:
             out_file.write('')
 
@@ -182,7 +264,6 @@ def main(args):
                 with open(args.output, 'a', encoding="utf-8") as out_file:
                     out_file.write(translation + '\n')
     #------------------------------------------
-    print(f"translations: {translations}")
     logging.info(f'Wrote {len(translations)} lines to {args.output}')
     end_time = time.perf_counter()
     logging.info(f'Translation completed in {end_time - start_time:.2f} seconds')

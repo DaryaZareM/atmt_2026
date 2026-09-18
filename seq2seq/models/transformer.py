@@ -7,6 +7,24 @@ from seq2seq.models import Seq2SeqModel, Seq2SeqEncoder, Seq2SeqDecoder
 import sentencepiece as spm
 
 
+class RMSNorm(nn.Module):
+    """Compatibility fallback for torch versions without nn.RMSNorm."""
+    def __init__(self, dim, eps=1e-6):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(dim))
+        self.eps = eps
+
+    def forward(self, x):
+        rms = x.pow(2).mean(dim=-1, keepdim=True).add(self.eps).rsqrt()
+        return self.weight * x * rms
+
+
+def build_rms_norm(dim):
+    if hasattr(nn, 'RMSNorm'):
+        return nn.RMSNorm(dim)
+    return RMSNorm(dim)
+
+
 
 
 @register_model('transformer')
@@ -94,7 +112,7 @@ class TransformerEncoder(Seq2SeqEncoder):
         self.pos_embed = nn.Parameter(torch.zeros(1, max_seq_len, dim_embed))
         self.encoder_blocks = nn.ModuleList([EncoderBlock(dim_embed, dropout, n_attention_heads, dim_ff) for _ in range(n_encoder_layers)])
         self.dropout = nn.Dropout(dropout)
-        self.norm = nn.RMSNorm(dim_embed)
+        self.norm = build_rms_norm(dim_embed)
 
     def forward(self, input, mask=None):
         x = self.tok_embed(input) # Vectors
@@ -148,7 +166,7 @@ class TransformerDecoder(Seq2SeqDecoder):
         self.pos_embed = nn.Parameter(torch.zeros(1, max_seq_len, dim_embed))
         self.dropout = nn.Dropout(dropout)
         self.decoder_blocks = nn.ModuleList([DecoderBlock( dim_embed, n_attention_heads, dropout, dim_ff ) for _ in range(n_decoder_layers)])
-        self.norm = nn.RMSNorm(dim_embed)
+        self.norm = build_rms_norm(dim_embed)
         self.linear = nn.Linear(dim_embed, self.tgt_vocab_size)
         self.device = torch.device("cuda" if use_cuda else "cpu")
     
@@ -221,7 +239,7 @@ class ResidualConnection(nn.Module):
     def __init__(self, dim, dropout):
         super().__init__()
         self.drop = nn.Dropout(dropout)
-        self.norm = nn.RMSNorm(dim)  # (x-M)/std
+        self.norm = build_rms_norm(dim)
 
     def forward(self, x, sublayer: nn.Module):
         # sublayer

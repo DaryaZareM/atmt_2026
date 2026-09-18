@@ -11,12 +11,8 @@ repo_outline.md
 trim.py
 
 # toy example outputs
-
-toy_example/data/prepared/*
-toy_example/tokenizers
-toy_example/logs
-toy_example/checkpoints
-toy_example/toy_example_output.en
+output/*
+!output/.gitkeep
 # other outputs
 /example
 /cz-en

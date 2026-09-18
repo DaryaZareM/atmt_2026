@@ -40,20 +40,17 @@ class BPETokenizer:
     def train_tokenizer(self, training_data: str, model_dir: str):
         """Trains the SentencePiece tokenizer on the parameters provided in the initialization of the class.\\
             The model is saved to the specified directory."""
+        os.makedirs(model_dir, exist_ok=True)
         model_name = f'{self.LANG}-bpe-{self.vocab_size}'
-        spm.SentencePieceTrainer.train(f'--input={training_data} --model_prefix={model_name} --pad_id=3 --vocab_size={self.vocab_size} --model_type=bpe --unk_piece={self.unk} --bos_piece={self.bos} --eos_piece={self.eos} --pad_piece={self.pad}')
+        model_prefix = os.path.join(model_dir, model_name)
+        spm.SentencePieceTrainer.train(f'--input={training_data} --model_prefix={model_prefix} --pad_id=3 --vocab_size={self.vocab_size} --model_type=bpe --unk_piece={self.unk} --bos_piece={self.bos} --eos_piece={self.eos} --pad_piece={self.pad}')
         
         self.tokenizer = spm.SentencePieceProcessor()
-        self.tokenizer.load(f'{model_name}.model')
+        self.tokenizer.load(f'{model_prefix}.model')
 
         assert self.tokenizer.get_piece_size() == self.vocab_size, "Vocabulary size does not match the expected size."
 
-        # os.makedirs(model_dir, exist_ok=True)
-        # if it exists, overwrite existing model in the save-directory
-        if os.path.exists(os.path.join(model_dir, f'{model_name}.model')):
-            os.remove(os.path.join(model_dir, f'{model_name}.model'))
-        os.renames(f'{model_name}.model', os.path.join(model_dir, f'{model_name}.model'))
-        os.remove(f'{model_name}.vocab')
+        os.remove(f'{model_prefix}.vocab')
 
     def load(self, model_path: str):
         """Loads the SentencePiece tokenizer from the specified directory."""

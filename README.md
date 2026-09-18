@@ -1,6 +1,6 @@
 # ATMT Codebase
 
-Materials for "Advanced Techniques of Machine Translation" (UZH, HS25).
+Materials for "Advanced Techniques of Machine Translation" (UZH, HS26).
 
 **Please refer to the assignment sheet for instructions for the actual assignments.**
 
@@ -9,33 +9,34 @@ The toolkit is based on last year's [version](https://github.com/davidguzmanp/at
 
 ## Environment Setup
 
-The coding assignments are designed to be run on UZH's ScienceCluster, documentation for which can be found [here](https://docs.s3it.uzh.ch/cluster/overview/). As part of a pilot program, we've been given access to a certain amount of GPU-hours, which we can use to train more sophisticated models than in the last year's assignments. Note that the models trained on the cluster will likely not reach SOTA performance, but should be more interesting than just toy examples nevertheless.
+The coding assignments are designed to be run in a Renku session with GPU support. Open a terminal in the Renku session and run the Python scripts directly; do not submit the provided scripts with `sbatch`.
 
-### Connecting to the cluster
+You can check that PyTorch sees the GPU with:
 
-Follow the steps outlined in the [ScienceCluster documentation](https://docs.s3it.uzh.ch/cluster/overview/) to connect to the cluster.
+```bash
+python -c "import torch; print(torch.cuda.is_available())"
+```
 
+### Toy dry-run
 
+To try the full pipeline on a very small dataset, run:
 
-#### Local dry-run
+```bash
+bash toy_example.sh
+```
 
-In case you'd like to try out the code locally, it is recommended to run `toy_example.sh` instead of the "real" training script. It uses a small fraction of the full dataset contained in the `toy_example` directory.
-
-We strongly suggest creating a Python environment to prevent library clashes with future projects, using either Conda or virtualenv (Conda is suggested). For other options, see [supplementary material](https://neat-tortellini-10f.notion.site/ATMT-Autumn-2023-Assignment-1-Setup-Instructions-96d8444a7d7146139a5b76a86a559f5f?pvs=4)
-
+The script reads raw toy data from `data/toy_example/en-sv/infopankki/raw` and writes all generated files under `output/toy_example`: prepared data, tokenizers, logs, checkpoints, and translations. If your raw files are somewhere else, run with `RAW_DATA=/path/to/raw bash toy_example.sh`.
 
 ### Installing required packages
 
-The ScienceCluster uses Mamba (an improved version of Conda) to setup environments.
+Use `uv` to create the Python environment. The helper script keeps the virtual environment, uv cache, and any uv-managed Python install under `output/`, which is useful on Renku when the project files are read-only:
 
-To install the required packages, run the following lines of code on the cluster:
-
-#TODO
+```bash
+bash setup_uv.sh
+source output/.venv/bin/activate
 ```
-module load mamba
 
-mamba create -n atmt -c pytorch -c nvidia pytorch pytorch-cuda
-```
+After that, `bash toy_example.sh` will use `output/.venv/bin/python` automatically. The file `requirements-uv.txt` is the pip-style dependency list used by uv. The file `requirements.txt` is a conda export and should not be used with `pip`; `requirement.yml` is kept as a conda-style reference.
 <!-- ### conda
 
 ```
@@ -120,8 +121,8 @@ python preprocess.py \
     --source-lang cz \  # the tag of the source language (Czech)
     --target-lang en \  # the tag of the target language (English)
     --raw-data .\toy_example\data\raw \  # unprocessed .txt-files, usually named <split>.<tag>, e.g. train.cz
-    --dest-dir .\toy_example/data/prepared \  # where the processed (tokenized, pickled) files will be stored to
-    --model-dir toy_example\tokenizers \  # where to store the trained tokenization models
+    --dest-dir output/toy_example/prepared \  # where the processed (tokenized, pickled) files will be stored to
+    --model-dir output/toy_example/tokenizers \  # where to store the trained tokenization models
     --test-prefix test \  # expected prefix for files belonging to the test-split
     --train-prefix train \  # expected prefix for files belonging to the train-split
     --valid-prefix valid \  # expected prefix for files belonging to the validation-split
@@ -190,16 +191,16 @@ Trains a transformer model on the prepared data.
 
 ```bash
 python train.py \
-    --data toy_example/data/prepared/ \  # output of preprocess.py
-    --src-tokenizer toy_example/tokenizers/cz-bpe-1000.model \  # location of the source tokenizer model
-    --tgt-tokenizer toy_example/tokenizers/en-bpe-1000.model \  # location of the target tokenizer model
+    --data output/toy_example/prepared/ \  # output of preprocess.py
+    --src-tokenizer output/toy_example/tokenizers/cz-bpe-1000.model \  # location of the source tokenizer model
+    --tgt-tokenizer output/toy_example/tokenizers/en-bpe-1000.model \  # location of the target tokenizer model
     --source-lang cz \
     --target-lang en \
     --batch-size 32 \  # batch size for training and validation
     --arch transformer \  # architecture variant: by default, only transformer exists
     --max-epoch 10 \  # maximum number of epochs (early stopping possible)
-    --log-file toy_example/logs/train.log \  # log-file name and location
-    --save-dir toy_example/checkpoints/ \  # directory to save the model checkpoints to
+    --log-file output/toy_example/logs/train.log \  # log-file name and location
+    --save-dir output/toy_example/checkpoints/ \  # directory to save the model checkpoints to
     --ignore-checkpoints \  # ignore potential existing checkpoints & train from scratch
     --encoder-dropout 0.1 \ 
     --decoder-dropout 0.1 \
@@ -213,9 +214,9 @@ python train.py \
 ```
 
 Notes:
-- add the `--cuda` flag if you want to train on a GPU, e.g. using Google Colab
+- add the `--cuda` flag when training in a Renku GPU session
 - the source- and target-tokenizer arguments have to match the model files created in the pre-processing step
-- the progress-bar is hardcoded to update only in 2-second intervals. This is done to not reduce the clutter in the output file of actual training runs on the cluster
+- the progress-bar is hardcoded to update only in 2-second intervals. This reduces clutter during longer training runs
 - the model specific arguments are added to `args` in the python file implementing said model, in this case `seq2seq/models/transformer.py`
 
 # Translation
@@ -224,12 +225,12 @@ Translate a raw (source language) text file (one sentence per line) to the targe
 ```bash
 python translate.py \
     --input toy_example/data/raw/test.cz \  #  Path to the raw source text file (one sentence per line, in Czech)
-    --src-tokenizer toy_example/tokenizers/cz-bpe-1000.model \  # Path to the trained SentencePiece tokenizer model for the source language
-    --tgt-tokenizer toy_example/tokenizers/en-bpe-1000.model \  # Path to the trained SentencePiece tokenizer model for the target language
-    --checkpoint-path toy_example/checkpoints/checkpoint_best.pt \ # Path to the trained model checkpoint
+    --src-tokenizer output/toy_example/tokenizers/cz-bpe-1000.model \  # Path to the trained SentencePiece tokenizer model for the source language
+    --tgt-tokenizer output/toy_example/tokenizers/en-bpe-1000.model \  # Path to the trained SentencePiece tokenizer model for the target language
+    --checkpoint-path output/toy_example/checkpoints/checkpoint_best.pt \ # Path to the trained model checkpoint
     --batch-size 1 \  # Number of sentences to process in each batch 
     --max-len 100 \  # Maximum length of generated translations (in tokens)
-    --output toy_example/toy_example_output.en \  # Path to write the generated translations (one per line)
+    --output output/toy_example/toy_example_output.en \  # Path to write the generated translations (one per line)
     --bleu \  # If set, compute BLEU score after translation (score output vs. reference)
     --reference toy_example/data/raw/test.en  # Path to the reference translation file (one sentence per line, in English)
 ```
@@ -237,10 +238,26 @@ python translate.py \
 Notes:
 - The source and target language tags do not have to be passed, as they are loaded and parsed as part of the model checkpoint
 - If `--bleu` is set but no reference is provided, this will throw an error
+- In Renku assignments you can also translate an already prepared source split with `--data`. When `--data` is a directory, `translate.py` reads `<prepared-split>.<source-lang>` from that directory; the default split is `test`.
+
+Example prepared-data translation:
+
+```bash
+python translate.py \
+    --cuda \
+    --data data/en-sv/bible_uedin/prepared \
+    --dicts data/en-sv/infopankki/tokenizers \
+    --checkpoint-path assignments/01/baseline/checkpoints/checkpoint_last.pt \
+    --output assignments/01/baseline/bible_translations.txt \
+    --prepared-split test \
+    --batch-size 32 \
+    --max-len 300
+```
+
+`--dicts` should point to the directory containing the SentencePiece `.model` files. If you pass a neighboring directory such as `prepared`, the script also checks common sibling locations such as `../tokenizers`.
 
 
 # Assignments
 
 Assignments must be submitted on OLAT by 14:00 on their respective
 due dates.
-
