@@ -1,13 +1,13 @@
-name: atmt
+name: base
+
 channels:
-  - pytorch
-  - nvidia
   - conda-forge
+  - nodefaults
+
 dependencies:
   - python=3.11
-  - pytorch
-  - pytorch-cuda=12.4
-  - numpy
-  - tqdm
-  - sacrebleu
-  - sentencepiece
+  - pip
+  - pip:
+      - -r requirements.txt
+
+prefix: /opt/conda
