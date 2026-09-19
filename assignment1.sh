@@ -18,6 +18,10 @@ LOG_FILE="${LOG_FILE:-${WORK_DIR}/logs/train.log}"
 OUTPUT_FILE="${OUTPUT_FILE:-${WORK_DIR}/translations.txt}"
 SRC_VOCAB_SIZE="${SRC_VOCAB_SIZE:-8000}"
 TGT_VOCAB_SIZE="${TGT_VOCAB_SIZE:-8000}"
+RUN_OUTPUT="${RUN_OUTPUT:-assignment1.out}"
+
+exec > >(tee "$RUN_OUTPUT") 2>&1
+echo "Writing run output to $RUN_OUTPUT"
 
 # PREPARE DATA
 "$PYTHON" preprocess.py \

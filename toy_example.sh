@@ -18,6 +18,10 @@ VALID_PREFIX="${VALID_PREFIX:-valid}"
 TEST_PREFIX="${TEST_PREFIX:-test}"
 SRC_VOCAB_SIZE="${SRC_VOCAB_SIZE:-1000}"
 TGT_VOCAB_SIZE="${TGT_VOCAB_SIZE:-1000}"
+RUN_OUTPUT="${RUN_OUTPUT:-toy_example.out}"
+
+exec > >(tee "$RUN_OUTPUT") 2>&1
+echo "Writing run output to $RUN_OUTPUT"
 
 required_files=(
     "${RAW_DATA}/${TRAIN_PREFIX}.${SOURCE_LANG}"
