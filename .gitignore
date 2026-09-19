@@ -1,21 +1,11 @@
 
-# Venv
-.venv-atmt2025/
 # Python
 __pycache__/
+*.pyc
 
-# not relevant
-old_files_and_debugging/
-changes.md
-repo_outline.md
-trim.py
+# macOS
+.DS_Store
 
-# toy example outputs
-output/*
-!output/.gitkeep
-# other outputs
-/example
-/cz-en
-
-# unused
-seq2seq/embedding_saver.py
+# Data and generated outputs
+data/
+output/
