@@ -18,8 +18,9 @@ VALID_PREFIX="${VALID_PREFIX:-valid}"
 TEST_PREFIX="${TEST_PREFIX:-test}"
 SRC_VOCAB_SIZE="${SRC_VOCAB_SIZE:-1000}"
 TGT_VOCAB_SIZE="${TGT_VOCAB_SIZE:-1000}"
-RUN_OUTPUT="${RUN_OUTPUT:-toy_example.out}"
+RUN_OUTPUT="${RUN_OUTPUT:-${OUTPUT_DIR}/toy_example.out}"
 
+mkdir -p "$OUTPUT_DIR"
 exec > >(tee "$RUN_OUTPUT") 2>&1
 echo "Writing run output to $RUN_OUTPUT"
 
@@ -48,7 +49,6 @@ TRANSLATION_OUTPUT="${OUTPUT_DIR}/toy_example_output.${TARGET_LANG}"
 # clean up from previous runs
 rm -rf "$PREPARED_DIR" "$TOKENIZER_DIR" "$CHECKPOINT_DIR" "$LOG_DIR"
 rm -f "$TRANSLATION_OUTPUT"
-mkdir -p "$OUTPUT_DIR"
 
 "$PYTHON" preprocess.py \
     --source-lang "$SOURCE_LANG" \
