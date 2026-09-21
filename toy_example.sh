@@ -2,6 +2,10 @@
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
+if [[ "$PWD" != "/home/renku/work/atmt_2026" ]]; then
+    cd "/home/renku/work/atmt_2026/"
+fi
+
 PYTHON="${PYTHON:-python}"
 if [[ -x output/.venv/bin/python ]]; then
     PYTHON="output/.venv/bin/python"
